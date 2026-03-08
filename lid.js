@@ -2,7 +2,7 @@
 
 import { createProgram, mat4 }                     from './webgl-utils.js';
 import { passAttribData, perspective, applyCamera } from './transform.js';
-// ВИПРАВЛЕНО: імпортуємо crateGeometry, бо саме цей об'єкт містить масиви вершин
+// ВИПРАВЛЕНО: імпортуємо crateGeometry, щоб назва збігалася з тією, що в draw_lid
 import { crateGeometry }                            from './geometry.js'; 
 
 const VS = `
@@ -16,7 +16,7 @@ const VS = `
   uniform mat4 u_Pers;
   varying vec3 v_color;
   void main() {
-    // Порядок множення: Перенос * Обертання * Масштаб
+    // Важливо: u_Trans має включати в себе всі трансформації моделі
     mat4 M   = u_Trans * u_RotX * u_RotY * u_Scale;
     mat4 MVP = u_Pers * u_View * M;
     gl_Position = MVP * vec4(a_coords, 1.0);
@@ -58,39 +58,42 @@ export function draw_lid(gl, state, ctx) {
   const { prog, posBuf, colBuf, locs, attribs } = ctx;
   gl.useProgram(prog);
 
-  // Використовуємо crateGeometry (яку ми тепер правильно імпортували)
+  // Тепер crateGeometry визначена завдяки правильному імпорту
   passAttribData(gl, crateGeometry.positions, posBuf, attribs.coords, 3);
   passAttribData(gl, crateGeometry.colors,    colBuf, attribs.colors, 3);
 
-  // --- РОЗРАХУНОК ГЕОМЕТРІЇ КРИШКИ ---
-  const crateScale = 0.9;   // має відповідати масштабу ящика в main.js
-  const lidH = 0.05;        // товщина кришки (робимо тонкою)
+  // --- Налаштування розмірів та позиції ---
+  const crateScale = 0.9;   // Масштаб ящика з main.js
+  const lidH = 0.05;        // Робимо кришку тонкою (було 0.10)
   
-  // Висота ящика після масштабування: 1.0 * 0.9 = 0.9. 
-  // Центр ящика в 0, отже верхня грань на +0.45
+  // Розрахунок висоти: ящик має висоту 1.0 * 0.9 = 0.9. 
+  // Верхня грань ящика знаходиться на Y = 0.45 (половина висоти)
   const crateTopY = 0.5 * crateScale; 
-  
-  // Центр кришки має бути над верхньою гранню ящика
-  const lidCenterY = crateTopY + (lidH / 2);
+  const lidCenterY = crateTopY + (lidH / 2); // Центр кришки точно над ящиком
 
-  // Точка обертання (Pivot) на задньому ребрі ящика (Z = -0.45)
+  // Точка обертання (Pivot) на задньому ребрі (Z = -0.45)
   const pivotZ = -0.5 * crateScale;
 
-  // 1. Створюємо матрицю трансформації для кришки вручну
-  // Порядок: Світовий перенос -> Світове обертання Y -> Підйом наверх -> Обертання відкриття (Pivot) -> Масштаб
-  
-  // Матриця відкриття навколо заднього ребра
+  // Матриці для анімації відкриття
   const toPivot   = mat4.translation(0, 0, pivotZ);
   const fromPivot = mat4.translation(0, 0, -pivotZ);
   const openRot   = mat4.rotationX(-state.lidAngle);
   const pivotMat  = mat4.multiply(fromPivot, mat4.multiply(openRot, toPivot));
 
-  let modelMat = mat4.multiply(state.transMat, state.rotYMat); // Загальний рух сцени
-  modelMat = mat4.multiply(modelMat, mat4.translation(0, lidCenterY, 0)); // Ставимо на ящик
-  modelMat = mat4.multiply(modelMat, pivotMat); // Відкриваємо
-  modelMat = mat4.multiply(modelMat, mat4.scale(crateScale, lidH, crateScale)); // Робимо пласкою і потрібної ширини
+  // Збірка фінальної матриці моделі
+  // 1. Починаємо з загальних трансформацій сцени (перенос та поворот Y)
+  let modelMat = mat4.multiply(state.transMat, state.rotYMat);
+  
+  // 2. Додаємо підйом кришки на верх ящика
+  modelMat = mat4.multiply(modelMat, mat4.translation(0, lidCenterY, 0));
+  
+  // 3. Додаємо обертання відкриття навколо заднього ребра
+  modelMat = mat4.multiply(modelMat, pivotMat);
+  
+  // 4. Застосовуємо масштаб (0.9 щоб збігалося з ящиком, lidH для тонкості)
+  modelMat = mat4.multiply(modelMat, mat4.scale(crateScale, lidH, crateScale));
 
-  // Передаємо фінальну матрицю в u_Trans, інші робимо одиничними
+  // Передаємо результат у шейдер
   gl.uniformMatrix4fv(locs.trans, false, modelMat);
   gl.uniformMatrix4fv(locs.rotX,  false, mat4.identity());
   gl.uniformMatrix4fv(locs.rotY,  false, mat4.identity());
