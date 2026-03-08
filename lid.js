@@ -1,22 +1,26 @@
 // lid.js — initGL_2() та draw_lid()
-// кришка = плоска масштабована версія ящика, лежить зверху
-// відкривання: обертання навколо заднього ребра (pivot = задній край верху ящика)
+// кришка = масштабована версія ящика (завдання 1)
+// окрема шейдерна програма (завдання 3)
+// ↑/↓ — відкривання/закривання (завдання 5)
 
 import { createProgram, mat4 }                     from './webgl-utils.js';
 import { passAttribData, perspective, applyCamera } from './transform.js';
 import { lidGeometry }                              from './geometry.js';
 
+// шейдер кришки — та сама структура що й ящик: M = Trans × RotX × RotY × Scale
 const VS = `
   attribute vec3 a_coords;
   attribute vec3 a_colors;
   uniform mat4 u_RotY;
   uniform mat4 u_RotX;
-  uniform mat4 u_Model;
+  uniform mat4 u_Scale;
+  uniform mat4 u_Trans;
   uniform mat4 u_View;
   uniform mat4 u_Pers;
   varying vec3 v_color;
   void main() {
-    mat4 MVP = u_Pers * u_View * u_RotX * u_RotY * u_Model;
+    mat4 M   = u_Trans * u_RotX * u_RotY * u_Scale;
+    mat4 MVP = u_Pers * u_View * M;
     gl_Position = MVP * vec4(a_coords, 1.0);
     v_color = a_colors;
   }
@@ -39,7 +43,8 @@ export function initGL_2(gl) {
   const locs = {
     rotY:  gl.getUniformLocation(prog, 'u_RotY'),
     rotX:  gl.getUniformLocation(prog, 'u_RotX'),
-    model: gl.getUniformLocation(prog, 'u_Model'),
+    scale: gl.getUniformLocation(prog, 'u_Scale'),
+    trans: gl.getUniformLocation(prog, 'u_Trans'),
     view:  gl.getUniformLocation(prog, 'u_View'),
     pers:  gl.getUniformLocation(prog, 'u_Pers'),
   };
@@ -59,42 +64,44 @@ export function draw_lid(gl, state, ctx) {
   passAttribData(gl, lidGeometry.positions, posBuf, attribs.coords, 3);
   passAttribData(gl, lidGeometry.colors,    colBuf, attribs.colors, 3);
 
-  const scaleX    = 0.97;
-  const scaleY    = 0.12;
-  const scaleZ    = 0.97;
-  const halfH     = scaleY / 2;        // 0.06 — половина висоти кришки
-  const crateTop  = 0.45 - 0.3;       // верх ящика в world space = 0.15
-  const pivotZ    = -scaleZ / 2;       // задній край по Z
+  // ── Кришка в тому самому просторі що й ящик ──────────────────────────────
+  // Ящик: Trans(0,-0.3,0) × RotX(30°) × RotY × Scale(0.9,0.9,0.9)
+  // Одиничний куб: Y від -0.5 до +0.5
+  // Після Scale(0.9): Y від -0.45 до +0.45
+  // Верхнє ребро ящика в LOCAL space (до RotX/RotY/Trans) = y = +0.45
+  // Кришка — плоска: Scale(0.92, 0.10, 0.92)
+  // Одиничний куб після цього: Y від -0.05 до +0.05
+  // Відкривання: pivot = заднє ребро кришки (z = -0.46 в local space кришки)
+  //   1. T(0, 0.50, 0)                → ставимо кришку на місце
+  //   2. T(0, 0, -0.46)               → переносимо в pivot
+  //   3. RotX(-lidAngle)              → відкриваємо
+  //   4. T(0, 0, +0.46)               → повертаємо pivot
 
-  // крок 1: масштабуємо
-  const S = mat4.scale(scaleX, scaleY, scaleZ);
 
-  // крок 2: піднімаємо куб так щоб його підошва = y=0
-  const liftToBase = mat4.translation(0, halfH, 0);
+  const lidH    = 0.10;                 // товщина кришки
+  const halfH   = lidH / 2;            // 0.05
+  const crateHalfY = 0.45;             // ящик scale(0.9) → ±0.45
+  const lidCenterY = crateHalfY + halfH; // 0.50 — центр кришки над ящиком
+  const pivotZ  = 0.46;                // задній край кришки по Z (0.92/2)
 
-  // крок 3+4+5: pivot-обертання навколо заднього ребра (y=0, z=pivotZ)
-  //   T(0, 0, -pivotZ) × RotX(lidAngle) × T(0, 0, pivotZ)
-  const toPivot     = mat4.translation(0, 0, -pivotZ);
-  const fromPivot   = mat4.translation(0, 0,  pivotZ);
-  const openRot     = mat4.rotationX(-state.lidAngle); // від'ємний = відкривається вперед-вгору
+  // pivot-обертання: T(-pivotZ) × RotX × T(+pivotZ)
+  const toPivot   = mat4.translation(0, 0,  pivotZ);
+  const fromPivot = mat4.translation(0, 0, -pivotZ);
+  const openRot   = mat4.rotationX(-state.lidAngle);
 
-  const pivotOpen = mat4.multiply(
-    toPivot,
-    mat4.multiply(openRot, fromPivot)
-  );
+  const pivotOpen = mat4.multiply(toPivot, mat4.multiply(openRot, fromPivot));
 
-  // крок 6: переміщуємо кришку на верх ящика
-  const placeOnTop = mat4.translation(0, crateTop, 0);
+  // localModel: підйом → pivot-відкривання → масштаб
+  const liftUp    = mat4.translation(0, lidCenterY, 0);
+  const lidScale  = mat4.scale(0.92, lidH, 0.92);
 
-  // складаємо model: placeOnTop × pivotOpen × liftToBase × S
-  const model = mat4.multiply(
-    placeOnTop,
-    mat4.multiply(pivotOpen, mat4.multiply(liftToBase, S))
-  );
+  const localModel = mat4.multiply(liftUp, mat4.multiply(pivotOpen, lidScale));
 
-  gl.uniformMatrix4fv(locs.model, false, model);
+
+  gl.uniformMatrix4fv(locs.scale, false, localModel);
   gl.uniformMatrix4fv(locs.rotY,  false, state.rotYMat);
   gl.uniformMatrix4fv(locs.rotX,  false, state.rotXMat);
+  gl.uniformMatrix4fv(locs.trans, false, state.transMat);
 
   applyCamera(gl, [0, 0.5, 3.5], [0, 0, 0], [0, 1, 0], locs.view);
 
