@@ -1,9 +1,8 @@
-// lid.js — виправлена версія
+// lid.js v2 — initGL_2() та draw_lid()
 
-import { createProgram, mat4 }                     from './webgl-utils.js';
-import { passAttribData, perspective, applyCamera } from './transform.js';
-// ВИПРАВЛЕНО: Імпортуємо як crateGeometry, щоб назва збігалася з викликом у коді
-import { crateGeometry }                            from './geometry.js'; 
+import { createProgram, mat4 }                      from './webgl-utils.js';
+import { passAttribData, rotate_Y, perspective }  from './transform.js';
+import { lidGeo }                                    from './geometry.js';
 
 const VS = `
   attribute vec3 a_coords;
@@ -12,93 +11,95 @@ const VS = `
   uniform mat4 u_RotX;
   uniform mat4 u_Scale;
   uniform mat4 u_Trans;
-  uniform mat4 u_View;
+  uniform mat4 u_Basis;
+  uniform mat4 u_Eye;
   uniform mat4 u_Pers;
   varying vec3 v_color;
   void main() {
-    // Важливо: u_Trans буде містити комбіновану матрицю для кришки
     mat4 M   = u_Trans * u_RotX * u_RotY * u_Scale;
-    mat4 MVP = u_Pers * u_View * M;
+    mat4 V   = u_Basis * u_Eye;
+    mat4 MVP = u_Pers  * V * M;
     gl_Position = MVP * vec4(a_coords, 1.0);
     v_color = a_colors;
   }
 `;
-
 const FS = `
   precision mediump float;
   varying vec3 v_color;
-  void main() {
-    gl_FragColor = vec4(v_color, 1.0);
-  }
+  void main() { gl_FragColor = vec4(v_color, 1.0); }
 `;
 
 export function initGL_2(gl) {
   const prog = createProgram(gl, VS, FS);
-  const posBuf = gl.createBuffer();
-  const colBuf = gl.createBuffer();
-
-  const locs = {
-    rotY:  gl.getUniformLocation(prog, 'u_RotY'),
-    rotX:  gl.getUniformLocation(prog, 'u_RotX'),
-    scale: gl.getUniformLocation(prog, 'u_Scale'),
-    trans: gl.getUniformLocation(prog, 'u_Trans'),
-    view:  gl.getUniformLocation(prog, 'u_View'),
-    pers:  gl.getUniformLocation(prog, 'u_Pers'),
+  return {
+    prog,
+    posBuf: gl.createBuffer(),
+    colBuf: gl.createBuffer(),
+    locs: {
+      rotY:  gl.getUniformLocation(prog, 'u_RotY'),
+      rotX:  gl.getUniformLocation(prog, 'u_RotX'),
+      scale: gl.getUniformLocation(prog, 'u_Scale'),
+      trans: gl.getUniformLocation(prog, 'u_Trans'),
+      basis: gl.getUniformLocation(prog, 'u_Basis'),
+      eye:   gl.getUniformLocation(prog, 'u_Eye'),
+      pers:  gl.getUniformLocation(prog, 'u_Pers'),
+    },
+    attribs: {
+      coords: gl.getAttribLocation(prog, 'a_coords'),
+      colors: gl.getAttribLocation(prog, 'a_colors'),
+    },
   };
-
-  const attribs = {
-    coords: gl.getAttribLocation(prog, 'a_coords'),
-    colors: gl.getAttribLocation(prog, 'a_colors'),
-  };
-
-  return { prog, posBuf, colBuf, locs, attribs };
 }
 
 export function draw_lid(gl, state, ctx) {
   const { prog, posBuf, colBuf, locs, attribs } = ctx;
   gl.useProgram(prog);
 
-  // Тепер помилки ReferenceError не буде
-  passAttribData(gl, crateGeometry.positions, posBuf, attribs.coords, 3);
-  passAttribData(gl, crateGeometry.colors,    colBuf, attribs.colors, 3);
+  passAttribData(gl, lidGeo.pos, posBuf, attribs.coords);
+  passAttribData(gl, lidGeo.col, colBuf, attribs.colors);
 
-  // --- Налаштування розмірів (ВИПРАВЛЕННЯ ШИРИНИ ТА ПОЗИЦІЇ) ---
-  
-  const crateScale = 0.9;   // Має бути таким самим, як у main.js для ящика
-  const lidH = 0.05;        // Робимо кришку тонкою (замість 0.10)
-  
-  // Ящик має висоту 1.0. При scale(0.9) його верхня межа на Y = 0.45
-  const crateTopY = 0.5 * crateScale; 
-  // Центр кришки має бути над цією межею на половину своєї товщини
-  const lidCenterY = crateTopY + (lidH / 2); 
+  // ── Математика кришки ─────────────────────────────────────────────────
+  // Одиничний куб: y ∈ [-0.5, +0.5], z ∈ [-0.5, +0.5]
+  // Ящик: scale(0.9) → верх = y=+0.45 в local space
+  //
+  // Кроки:
+  //   1. scale(sx, lidY, sz)   — плоска плитка товщиною 0.12
+  //   2. T(0, halfH, 0)        — підняти підошву до y=0
+  //      після: y ∈ [0..0.12], задній нижній край = (x, 0, -pz)
+  //   3. pivot-rotate навколо (0, 0, -pz):
+  //      T(0,0,-pz) × RotX(-lidAngle) × T(0,0,+pz)
+  //      від'ємний кут: передній край іде ВГОРУ (відкривання)
+  //   4. T(0, 0.45, 0)         — поставити підошву кришки на верх ящика
 
-  // Точка обертання (Pivot) на задньому ребрі (Z = -0.45 для куба scale 0.9)
-  const pivotZ = -0.5 * crateScale;
+  const lidY  = 0.12;
+  const sx    = 0.92;
+  const sz    = 0.92;
+  const halfH = lidY / 2;  // 0.06
+  const pz    = sz  / 2;   // 0.46 — задній край = нерухомий pivot
 
-  // Матриці для відкриття
-  const toPivot   = mat4.translation(0, 0, pivotZ);
-  const fromPivot = mat4.translation(0, 0, -pivotZ);
-  const openRot   = mat4.rotationX(-state.lidAngle);
-  const pivotMat  = mat4.multiply(fromPivot, mat4.multiply(openRot, toPivot));
+  const step1 = mat4.scale(sx, lidY, sz);
+  const step2 = mat4.multiply(mat4.trans(0, halfH, 0), step1);
 
-  // Формуємо фінальну матрицю моделі для кришки
-  // Порядок: Світові Т та R -> Підйом на кришку -> Обертання відкриття -> Масштабування
-  let modelMat = mat4.multiply(state.transMat, state.rotYMat);
-  modelMat = mat4.multiply(modelMat, mat4.translation(0, lidCenterY, 0));
-  modelMat = mat4.multiply(modelMat, pivotMat);
-  // Встановлюємо масштаб 0.9 (як у ящика), щоб вона не була широкою
-  modelMat = mat4.multiply(modelMat, mat4.scale(crateScale, lidH, crateScale));
+  // pivot: T(0,0,-pz) × RotX(-angle) × T(0,0,+pz)
+  // -angle → передній край іде вгору при збільшенні lidAngle
+  const pivM = mat4.multiply(
+    mat4.trans(0, 0, -pz),
+    mat4.multiply(mat4.rotX(-state.lidAngle), mat4.trans(0, 0, pz))
+  );
 
-  // Передаємо в шейдер
-  gl.uniformMatrix4fv(locs.trans, false, modelMat);
-  gl.uniformMatrix4fv(locs.rotX,  false, mat4.identity());
-  gl.uniformMatrix4fv(locs.rotY,  false, mat4.identity());
-  gl.uniformMatrix4fv(locs.scale, false, mat4.identity());
+  const step3    = mat4.multiply(pivM, step2);
+  const localLid = mat4.multiply(mat4.trans(0, 0.45, 0), step3);
 
-  // Камера та перспектива
-  applyCamera(gl, locs.view);
-  const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-  perspective(gl, aspect, 45, 0.1, 100, locs.pers);
+  // ті самі RotX(30°), RotY, Trans що й ящик → рух синхронний
+  rotate_Y(gl, state.rotY, locs.rotY);
+  gl.uniformMatrix4fv(locs.rotX,  false, mat4.rotX(Math.PI / 6));
+  gl.uniformMatrix4fv(locs.scale, false, localLid);
+  gl.uniformMatrix4fv(locs.trans, false, mat4.trans(0, -0.3, 0));
+  gl.uniformMatrix4fv(locs.basis, false, mat4.identity());
+  gl.uniformMatrix4fv(locs.eye,   false, mat4.lookAt([0, 0.8, 3.2], [0,0,0], [0,1,0]));
 
-  gl.drawArrays(gl.TRIANGLES, 0, crateGeometry.positions.length / 3);
+  const aspect = gl.canvas.width / gl.canvas.height;
+  perspective(gl, aspect, 45, 0.1, 20, locs.pers);
+
+  gl.drawArrays(gl.TRIANGLES, 0, 36);
 }

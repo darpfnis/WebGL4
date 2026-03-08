@@ -1,4 +1,4 @@
-// webgl-utils.js — GL setup + mat4
+// webgl-utils.js
 
 export function setupWebGL(id) {
   const canvas = document.getElementById(id);
@@ -27,14 +27,9 @@ export function createProgram(gl, vs, fs) {
   return p;
 }
 
-// ── mat4 ─────────────────────────────────────────────────────────────────────
-// column-major (WebGL standard)
-
+// mat4 — column-major (WebGL стандарт)
 export const mat4 = {
-
-  identity: () => new Float32Array([
-    1,0,0,0,  0,1,0,0,  0,0,1,0,  0,0,0,1,
-  ]),
+  identity: () => new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
 
   multiply(a, b) {
     const o = new Float32Array(16);
@@ -47,71 +42,37 @@ export const mat4 = {
     return o;
   },
 
-  // x' = x cosβ − y sinβ,  y' = x sinβ + y cosβ
-  rotationY(a) {
+  rotY(a) {
     const c = Math.cos(a), s = Math.sin(a);
-    return new Float32Array([
-       c, 0, s, 0,
-       0, 1, 0, 0,
-      -s, 0, c, 0,
-       0, 0, 0, 1,
-    ]);
+    return new Float32Array([c,0,s,0, 0,1,0,0, -s,0,c,0, 0,0,0,1]);
   },
 
-  rotationX(a) {
+  rotX(a) {
     const c = Math.cos(a), s = Math.sin(a);
-    return new Float32Array([
-      1,  0,  0, 0,
-      0,  c,  s, 0,
-      0, -s,  c, 0,
-      0,  0,  0, 1,
-    ]);
+    return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]);
   },
 
-  // масштабування
-  scale: (sx, sy, sz) => new Float32Array([
-    sx, 0,  0,  0,
-    0,  sy, 0,  0,
-    0,  0,  sz, 0,
-    0,  0,  0,  1,
-  ]),
+  scale:  (x,y,z) => new Float32Array([x,0,0,0, 0,y,0,0, 0,0,z,0, 0,0,0,1]),
+  trans:  (x,y,z) => new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]),
 
-  // переміщення
-  translation: (tx, ty, tz) => new Float32Array([
-    1,  0,  0,  0,
-    0,  1,  0,  0,
-    0,  0,  1,  0,
-    tx, ty, tz, 1,
-  ]),
-
-  // перспективна матриця (з прикладу з PDF, column-major)
-  // pa = 1/(aspect * tan(fov/2)), pb = 1/tan(fov/2)
-  // pc = -(far+near)/(far-near), pd = -(2*far*near)/(far-near)
+  // матриця перспективи (формули з PDF)
   perspective(fovDeg, aspect, near, far) {
-    const t  = Math.tan((fovDeg / 2) * Math.PI / 180);
+    const t = Math.tan(fovDeg * Math.PI / 360);
     const pa = 1 / (aspect * t);
     const pb = 1 / t;
     const pc = -(far + near) / (far - near);
     const pd = -(2 * far * near) / (far - near);
-    return new Float32Array([
-      pa,  0,   0,   0,
-       0, pb,   0,   0,
-       0,  0,  pc,  -1,
-       0,  0,  pd,   0,
-    ]);
+    return new Float32Array([pa,0,0,0, 0,pb,0,0, 0,0,pc,-1, 0,0,pd,0]);
   },
 
-  // lookAt — камера (basis × eye)
-  lookAt(eye, center, up) {
+  lookAt(eye, at, up) {
     const norm = v => { const l = Math.hypot(...v); return v.map(x => x/l); };
-    const sub  = (a,b) => a.map((v,i) => v - b[i]);
-    const cross = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
-    const dot   = (a,b) => a.reduce((s,v,i) => s + v*b[i], 0);
-
-    const f = norm(sub(center, eye));
+    const sub   = (a,b) => a.map((v,i) => v - b[i]);
+    const cross  = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    const dot    = (a,b) => a.reduce((s,v,i) => s + v*b[i], 0);
+    const f = norm(sub(at, eye));
     const r = norm(cross(f, up));
     const u = cross(r, f);
-
     return new Float32Array([
        r[0],  u[0], -f[0], 0,
        r[1],  u[1], -f[1], 0,

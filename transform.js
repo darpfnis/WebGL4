@@ -1,52 +1,20 @@
-// transform.js — функції трансформації, перспективи і буферів атрибутів
-// (відповідно до вимог з PDF: окремі функції для кожного типу операції)
-
+// transform.js — функції трансформації, перспективи, буферів атрибутів
 import { mat4 } from './webgl-utils.js';
 
-// ── Функції трансформації 
-
-// обертання по Y — передає матрицю в шейдер
+// rotate_Y(thetaY, loc) — обертання по Y
 export function rotate_Y(gl, thetaY, loc) {
-  gl.uniformMatrix4fv(loc, false, mat4.rotationY(thetaY));
+  gl.uniformMatrix4fv(loc, false, mat4.rotY(thetaY));
 }
 
-// обертання по X
-export function rotate_X(gl, thetaX, loc) {
-  gl.uniformMatrix4fv(loc, false, mat4.rotationX(thetaX));
-}
-
-// масштабування
-export function applyScale(gl, sx, sy, sz, loc) {
-  gl.uniformMatrix4fv(loc, false, mat4.scale(sx, sy, sz));
-}
-
-// переміщення
-export function applyTranslation(gl, tx, ty, tz, loc) {
-  gl.uniformMatrix4fv(loc, false, mat4.translation(tx, ty, tz));
-}
-
-// ── Функція перспективи 
-
-// perspective(aspect, fov, near, far, loc)
-// будує матрицю перспективи і передає в шейдер
+// perspective(aspect, fov, near, far, loc) — матриця перспективи в шейдер
 export function perspective(gl, aspect, fovDeg, near, far, loc) {
   gl.uniformMatrix4fv(loc, false, mat4.perspective(fovDeg, aspect, near, far));
 }
 
-// ── Функція буфера атрибутів 
-
-// passAttribData(gl, data, buffer, loc, size)
-// завантажує дані в GPU і вмикає вершинний атрибут
-export function passAttribData(gl, data, buffer, loc, size = 3) {
+// passAttribData(data, buffer, loc) — завантажує дані атрибута в GPU
+export function passAttribData(gl, data, buffer, loc) {
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
   gl.enableVertexAttribArray(loc);
-  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
-}
-
-// ── Матриця камери 
-
-// lookAt — будує V = basis × eye і передає в шейдер
-export function applyCamera(gl, eye, center, up, loc) {
-  gl.uniformMatrix4fv(loc, false, mat4.lookAt(eye, center, up));
+  gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
 }

@@ -7,65 +7,34 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
   <header>
-    <div class="header-badge">
-      <span class="dot"></span>
-      Комп'ютерна графіка
-    </div>
+    <div class="header-badge"><span class="dot"></span>Комп'ютерна графіка</div>
     <h1>Лабораторна робота №4</h1>
     <p>Перспектива та трансформація камери · MVP = P × V × M</p>
   </header>
 
   <main class="app-wrap">
-
     <div class="card">
       <div class="card-header">
         <div class="card-number">✦</div>
-        <h2>
-          Ящик із кришкою · окремі шейдери · стрілки керують сценою
-        </h2>
+        <h2>Ящик із кришкою · окремі шейдери · стрілки керують сценою</h2>
       </div>
-
       <div class="card-body">
-
-        <!-- keyboard hints -->
         <div class="kbd-hint">
-          <span class="kbd-item">
-            <kbd id="kbd-left">←</kbd>
-            <kbd id="kbd-right">→</kbd>
-            обертання ящика по Y
-          </span>
-          <span class="kbd-item">
-            <kbd id="kbd-up">↑</kbd>
-            відкрити кришку
-          </span>
-          <span class="kbd-item">
-            <kbd id="kbd-down">↓</kbd>
-            закрити кришку
-          </span>
+          <span class="kbd-item"><kbd id="kbd-left">←</kbd><kbd id="kbd-right">→</kbd> обертання ящика по Y</span>
+          <span class="kbd-item"><kbd id="kbd-up">↑</kbd> відкрити кришку</span>
+          <span class="kbd-item"><kbd id="kbd-down">↓</kbd> закрити кришку</span>
         </div>
-
         <canvas id="main-canvas" width="912" height="520"></canvas>
-
       </div>
-
       <div class="status-bar">
-        <span>
-          <span class="status-dot"></span>
-          perspective · M = Trans × RotX × RotY × Scale
-        </span>
+        <span><span class="status-dot"></span>perspective · M = Trans × RotX × RotY × Scale</span>
         <span id="status-info">rotY: 30° · lid: 0°</span>
       </div>
-
     </div>
-
   </main>
 
-  <footer>
-    webgl · camera transform · perspective &nbsp;·&nbsp; КПІ ім. Ігоря Сікорського
-  </footer>
-
+  <footer>webgl · camera transform · perspective &nbsp;·&nbsp; КПІ ім. Ігоря Сікорського</footer>
   <script type="module" src="main.js"></script>
 </body>
 </html>
