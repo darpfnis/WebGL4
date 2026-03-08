@@ -61,52 +61,49 @@ export function draw_lid(gl, state, ctx) {
   const { prog, posBuf, colBuf, locs, attribs } = ctx;
   gl.useProgram(prog);
 
-  passAttribData(gl, lidGeometry.positions, posBuf, attribs.coords, 3);
-  passAttribData(gl, lidGeometry.colors,    colBuf, attribs.colors, 3);
+  passAttribData(gl, crateGeometry.positions, posBuf, attribs.coords, 3);
+  passAttribData(gl, crateGeometry.colors,    colBuf, attribs.colors, 3);
 
-  // ── Кришка в тому самому просторі що й ящик ──────────────────────────────
-  // Ящик: Trans(0,-0.3,0) × RotX(30°) × RotY × Scale(0.9,0.9,0.9)
-  // Одиничний куб: Y від -0.5 до +0.5
-  // Після Scale(0.9): Y від -0.45 до +0.45
-  // Верхнє ребро ящика в LOCAL space (до RotX/RotY/Trans) = y = +0.45
-  // Кришка — плоска: Scale(0.92, 0.10, 0.92)
-  // Одиничний куб після цього: Y від -0.05 до +0.05
-  // Відкривання: pivot = заднє ребро кришки (z = -0.46 в local space кришки)
-  //   1. T(0, 0.50, 0)                → ставимо кришку на місце
-  //   2. T(0, 0, -0.46)               → переносимо в pivot
-  //   3. RotX(-lidAngle)              → відкриваємо
-  //   4. T(0, 0, +0.46)               → повертаємо pivot
+  // 1. Параметри розмірів
+  const lidH = 0.05;                // Зменшимо товщину кришки для кращого вигляду
+  const crateScale = 0.9;           // Має збігатися з масштабом у main.js
+  const crateHeight = 1.0 * crateScale; 
+  const halfCrateHeight = crateHeight / 2;
+  
+  // Координата Y для центру кришки, щоб вона лежала ПОВЕРХ ящика
+  // -0.3 — це зміщення всього ящика вниз у main.js
+  const lidCenterY = halfCrateHeight + (lidH / 2); 
 
-
-  const lidH    = 0.10;                 // товщина кришки
-  const halfH   = lidH / 2;            // 0.05
-  const crateHalfY = 0.45;             // ящик scale(0.9) → ±0.45
-  const lidCenterY = crateHalfY + halfH; // 0.50 — центр кришки над ящиком
-  const pivotZ  = 0.46;                // задній край кришки по Z (0.92/2)
-
-  // pivot-обертання: T(-pivotZ) × RotX × T(+pivotZ)
-  const toPivot   = mat4.translation(0, 0,  pivotZ);
+  // 2. Налаштування Pivot (точка обертання на задньому ребрі)
+  const pivotZ = 0.5 * crateScale; // Заднє ребро ящика по осі Z
+  
+  const toPivot   = mat4.translation(0, 0, pivotZ);
   const fromPivot = mat4.translation(0, 0, -pivotZ);
   const openRot   = mat4.rotationX(-state.lidAngle);
 
+  // Матриця відкриття: перенос в pivot -> поворот -> повернення
   const pivotOpen = mat4.multiply(toPivot, mat4.multiply(openRot, fromPivot));
 
-  // localModel: підйом → pivot-відкривання → масштаб
-  const liftUp    = mat4.translation(0, lidCenterY, 0);
-  const lidScale  = mat4.scale(0.92, lidH, 0.92);
+  // 3. Комбінація трансформацій
+  // Порядок: Світове зміщення * Обертання сцени * Підйом наверх ящика * Відкриття * Масштаб
+  let modelMat = mat4.multiply(state.transMat, state.rotYMat); // Загальні Т та R
+  modelMat = mat4.multiply(modelMat, mat4.translation(0, halfCrateHeight, 0)); // На верхню грань
+  modelMat = mat4.multiply(modelMat, pivotOpen); // Обертання кришки
+  modelMat = mat4.multiply(modelMat, mat4.translation(0, lidH / 2, 0)); // Центрування товщини
+  modelMat = mat4.multiply(modelMat, mat4.scale(crateScale, lidH, crateScale)); // Масштаб як у ящика
 
-  const localModel = mat4.multiply(liftUp, mat4.multiply(pivotOpen, lidScale));
+  // 4. Передача матриць у шейдер
+  // Оскільки у вашому VS матриця M = u_Trans * u_RotX * u_RotY * u_Scale,
+  // для коректної роботи з нашою modelMat передамо її в u_Trans, а інші зробимо одиничними
+  gl.uniformMatrix4fv(locs.trans, false, modelMat);
+  gl.uniformMatrix4fv(locs.rotX,  false, mat4.identity());
+  gl.uniformMatrix4fv(locs.rotY,  false, mat4.identity());
+  gl.uniformMatrix4fv(locs.scale, false, mat4.identity());
 
+  // Камера та перспектива
+  applyCamera(gl, locs.view);
+  const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+  perspective(gl, aspect, 45, 0.1, 100, locs.pers);
 
-  gl.uniformMatrix4fv(locs.scale, false, localModel);
-  gl.uniformMatrix4fv(locs.rotY,  false, state.rotYMat);
-  gl.uniformMatrix4fv(locs.rotX,  false, state.rotXMat);
-  gl.uniformMatrix4fv(locs.trans, false, state.transMat);
-
-  applyCamera(gl, [0, 0.5, 3.5], [0, 0, 0], [0, 1, 0], locs.view);
-
-  const aspect = gl.canvas.width / gl.canvas.height;
-  perspective(gl, aspect, 45, 0.1, 20, locs.pers);
-
-  gl.drawArrays(gl.TRIANGLES, 0, lidGeometry.count);
+  gl.drawArrays(gl.TRIANGLES, 0, crateGeometry.positions.length / 3);
 }
